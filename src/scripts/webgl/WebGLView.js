@@ -6,6 +6,8 @@ import OrbitControls from 'three-orbitcontrols';
 import TweenMax from 'TweenMax';
 import baseDiffuseFrag from '../../shaders/basicDiffuse.frag';
 import basicDiffuseVert from '../../shaders/basicDiffuse.vert';
+import dougFrag from '../../shaders/doug.frag';
+import dougVert from '../../shaders/doug.vert';
 import MouseCanvas from '../MouseCanvas';
 import TextCanvas from '../TextCanvas';
 import RenderTri from '../RenderTri';
@@ -28,9 +30,9 @@ export default class WebGLView {
   async init() {
     this.initThree();
     this.initBgScene();
-    this.initLights();
     this.initTweakPane();
-    await this.loadTestMesh();
+    await this.loadMesh();
+    this.initLights();
     this.setupTextCanvas();
     this.initMouseMoveListen();
     this.initMouseCanvas();
@@ -108,6 +110,8 @@ export default class WebGLView {
         max: 0.5
       })
       .on('change', value => { });
+
+    this.pane.containerElem_.style.display = 'none';
   }
 
   initMouseCanvas() {
@@ -120,8 +124,13 @@ export default class WebGLView {
     this.height = window.innerHeight;
 
     window.addEventListener('mousemove', ({ clientX, clientY }) => {
-      this.mouse.x = clientX; //(clientX / this.width) * 2 - 1;
-      this.mouse.y = clientY; //-(clientY / this.height) * 2 + 1;
+      // this.mouse.x = (clientX / this.width) * 2 - 1;
+      // this.mouse.y = -(clientY / this.height) * 2 + 1;
+
+      TweenMax.to(this.mouse, 4.5, {
+        x: (clientX / this.width) * 2 - 1,
+        y: -(clientY / this.height) * 2 + 1
+      })
 
       this.mouseCanvas.addTouch(this.mouse);
     });
@@ -142,35 +151,73 @@ export default class WebGLView {
     this.textCanvas = new TextCanvas(this);
   }
 
-  loadTestMesh() {
+  loadMesh() {
     return new Promise((res, rej) => {
       let loader = new GLTFLoader();
 
-      loader.load('./bbali.glb', object => {
-        this.testMesh = object.scene.children[0];
-        console.log(this.testMesh);
-        this.testMesh.add(new THREE.AxesHelper());
+      loader.load('https://raw.githubusercontent.com/pfreema1/threejs-custom-shaders/shader-test-5/static/PreviousTests/Test2.gltf', object => {
+        // debugger;
+        console.log('object:  ', object);
+        this.bgScene = object.scene;
+        this.doug = object.scene.children[2];
+        this.doug.add(new THREE.AxesHelper());
+        this.dougMesh = this.doug.children[1];
+        this.dougMesh.material.transparent = true;
+        this.dp = [];
+        // this.bgScene.add(this.doug);
+        this.doug.position.z -= 5;
+        this.group = new THREE.Group();
+        // this.group.add(this.doug);
 
-        this.testMeshMaterial = new THREE.ShaderMaterial({
-          fragmentShader: glslify(baseDiffuseFrag),
-          vertexShader: glslify(basicDiffuseVert),
-          uniforms: {
-            u_time: {
-              value: 0.0
-            },
-            u_lightColor: {
-              value: new THREE.Vector3(0.0, 1.0, 1.0)
-            },
-            u_lightPos: {
-              value: new THREE.Vector3(-2.2, 2.0, 2.0)
-            }
+        // setup doug animation
+        this.mixer = new THREE.AnimationMixer(object.scene);
+        let actions = [];
+        actions.push(this.mixer.clipAction(object.animations[0]));
+        actions[0].loop = THREE.LoopPingPong;
+        actions[0].play();
+        actions[0].timeScale = 1.0;
+
+        // setup points doug
+        const pointsMaterialShader = THREE.ShaderLib.points;
+        const uniforms = {
+          time: {
+            type: 'f',
+            value: 0
+          },
+          size: {
+            type: 'f',
+            value: 2
+          },
+          scale: {
+            type: 'f',
+            value: 1
+          },
+          dougX: {
+            type: 'f',
+            value: 0
           }
-        });
+        };
+        const customUniforms = THREE.UniformsUtils.merge([pointsMaterialShader, uniforms]);
+        const shaderMaterialParams = {
+          uniforms: customUniforms,
+          vertexShader: glslify(dougVert),
+          fragmentShader: glslify(dougFrag) //pointsMaterialShader.fragmentShader,
+        };
+        const pointMat = new THREE.ShaderMaterial(shaderMaterialParams);
 
-        this.testMesh.material = this.testMeshMaterial;
-        this.testMesh.material.needsUpdate = true;
+        for (let i = 0; i < 3; i++) {
+          const dp = new THREE.Points(this.dougMesh.geometry, pointMat);
+          dp.position.set(0, 2, 278);
+          dp.scale.set(0.14 + (i * 0.002), 0.14 + (i * 0.002), 0.14 + (i * 0.002));
+          dp.positionScalar = Math.random() * 2 - 1;
+          this.dp.push(dp);
+          this.bgScene.add(dp);
+          // this.group.add(dp);
+        }
 
-        this.bgScene.add(this.testMesh);
+
+
+
         res();
       });
     });
@@ -188,6 +235,15 @@ export default class WebGLView {
     );
   }
 
+  normalize(x, fromMin, fromMax) {
+    let totalRange;
+
+    x = Math.abs(x);
+    totalRange = Math.abs(fromMin) + Math.abs(fromMax);
+    // now we can map out the range from 0 to the totalRange and get a normalized (0 - 1) value
+    return x / totalRange;
+  }
+
   initBgScene() {
     this.bgRenderTarget = new THREE.WebGLRenderTarget(
       window.innerWidth,
@@ -197,19 +253,20 @@ export default class WebGLView {
       50,
       window.innerWidth / window.innerHeight,
       0.01,
-      100
+      1000
     );
-    this.controls = new OrbitControls(this.bgCamera, this.renderer.domElement);
 
-    this.bgCamera.position.z = 3;
+    // this.bgCamera.position.z = 3;
+    this.bgCamera.position.set(-20, 0, -40);
+    this.controls = new OrbitControls(this.bgCamera, this.renderer.domElement);
     this.controls.update();
 
     this.bgScene = new THREE.Scene();
   }
 
   initLights() {
-    this.pointLight = new THREE.PointLight(0xff0000, 1, 100);
-    this.pointLight.position.set(0, 0, 50);
+    this.pointLight = new THREE.PointLight(0xffffff, 100);
+    this.pointLight.position.set(0, 50, 50);
     this.bgScene.add(this.pointLight);
   }
 
@@ -241,11 +298,46 @@ export default class WebGLView {
     this.textCanvas.texture.needsUpdate = true;
   }
 
+  updateDougPoints(time) {
+    for (let i = 0; i < this.dp.length; i++) {
+      let dp = this.dp[i];
+
+      dp.position.x = this.mouse.x * dp.positionScalar * 200;
+
+      // dp.position.x = Math.min(Math.max(dp.position.x, -15), 15);
+
+      dp.material.uniforms.dougX.value = dp.position.x;
+
+      dp.material.uniforms.time.value = time;
+
+      // dp.opacity = 0.2;
+
+    }
+  }
+
+  updateDoug(time) {
+    this.bgCamera.lookAt(this.doug.position);
+    // this.doug.rotation.z += 0.002;
+    // this.doug.rotation.x += 0.002;
+  }
+
   update() {
     const delta = this.clock.getDelta();
     const time = performance.now() * 0.0005;
 
     this.controls.update();
+
+    if (this.mixer) {
+      this.mixer.update(delta);
+    }
+
+    if (this.dp) {
+      this.updateDougPoints(time);
+    }
+
+    if (this.doug) {
+      this.updateDoug(time);
+    }
 
     if (this.renderTri) {
       this.renderTri.triMaterial.uniforms.uTime.value = time;
