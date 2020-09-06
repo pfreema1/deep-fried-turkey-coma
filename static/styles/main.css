@@ -1,5 +1,25 @@
 body {
+	position: relative;
 	background-color: #000;
 	margin: 0;
 	overflow: hidden;
+
+	height: 100vh;
+}
+
+.loader-container {
+
+	display: flex;
+	justify-content: center;
+	align-items: center;
+
+	position: absolute;
+	top: 0;
+	right: 0;
+	bottom: 0;
+	left: 0;
+
+	color: white;
+
+	font-family: serif;
 }

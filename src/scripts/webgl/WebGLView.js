@@ -39,6 +39,14 @@ export default class WebGLView {
     this.initRenderTri();
     this.initPostProcessing();
     this.initResizeHandler();
+
+    this.hideLoader();
+  }
+
+  hideLoader() {
+    let el = document.getElementById('loader');
+    el.style.display = 'none';
+    // debugger;
   }
 
   initResizeHandler() {
